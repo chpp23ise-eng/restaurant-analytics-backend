@@ -1,0 +1,11 @@
+order_id,timestamp,item,category,quantity,price_per_item,total_amount
+ORD0001,2025-11-16 14:20:00,Veg Thali,today_thali,2,140.0,280.0
+ORD0002,2025-11-16 14:35:00,Paneer Thali,today_thali,1,160.0,160.0
+ORD0003,2025-11-16 20:15:00,Veg Fried Rice,chinese_rice,2,110.0,220.0
+ORD0004,2025-11-16 21:10:00,Paneer Chilly,chinese_starters,1,150.0,150.0
+ORD0005,2025-11-16 12:55:00,Rajma Thali,today_thali,1,150.0,150.0
+ORD0006,2025-11-16 09:20:00,Masala Tea,hot_and_cold,2,20.0,40.0
+ORD0007,2025-11-16 19:40:00,Veg Noodles,chinese_noodles,1,110.0,110.0
+ORD0008,2025-11-16 17:05:00,Chole Masala Thali,today_thali,1,150.0,150.0
+ORD0009,2025-11-16 22:30:00,Paneer Butter Masala,special_sabji,1,180.0,180.0
+ORD0009,2025-11-16 22:30:00,Paneer Butter Masala,special_sabji,1,180.0,180.0
