@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from datetime import datetime, timedelta
-from services.load_csv import load_real_data, load_dummy_data   # <-- adjust if your loader filename differs
+from services.csv_loader import load_real_data, load_dummy_data   # <-- adjust if your loader filename differs
 
 
 # ---------------- Utility ---------------- #
