@@ -1,21 +1,35 @@
 # services/ml_models.py
+
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from services.csv_loader import load_real_data, load_dummy_data
+from datetime import timedelta
+from services.csv_loader import load_csv_orders
 
 
-# ------------ Utility ------------ #
+# ---------------- Utility Functions ---------------- #
 
 def ensure_timestamp(df):
+    """
+    Ensure timestamp column exists and is valid.
+    """
     df = df.copy()
+    if "timestamp" not in df.columns:
+        return pd.DataFrame()  # fail-safe
+
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = df.dropna(subset=["timestamp"])
     return df
 
 
 def aggregate_daily(df):
+    """
+    Aggregate total quantity per date for daily trend forecasting.
+    """
     df = ensure_timestamp(df)
+
+    if df.empty:
+        return pd.DataFrame(columns=["date", "quantity"])
+
     df["date"] = df["timestamp"].dt.date
     daily = df.groupby("date")["quantity"].sum().reset_index()
     daily["date"] = pd.to_datetime(daily["date"])
@@ -23,17 +37,17 @@ def aggregate_daily(df):
     return daily
 
 
-# ------------ Simple Linear Regression Using NumPy ------------ #
+# ---------------- Simple Linear Regression (NumPy) ---------------- #
 
 def simple_linear_regression(x, y):
     """
-    Returns slope and intercept using normal equation.
+    Returns slope and intercept using normal equation:
+        theta = (X^T X)^(-1) X^T y
     """
     x = np.array(x)
     y = np.array(y)
 
-    X = np.column_stack([np.ones(len(x)), x])   # [1, x]
-    # theta = (X^T X)^(-1) X^T y
+    X = np.column_stack([np.ones(len(x)), x])  # column of ones + x-values
     theta = np.linalg.pinv(X.T @ X) @ X.T @ y
 
     intercept = theta[0]
@@ -41,37 +55,49 @@ def simple_linear_regression(x, y):
     return slope, intercept
 
 
-# ------------ 1) Predict Tomorrow ------------ #
+# ---------------- 1️⃣ Predict Tomorrow's Total Orders ---------------- #
 
 def predict_tomorrow(df):
     daily = aggregate_daily(df)
 
+    if daily.empty:
+        return {"predicted_orders": 0, "method": "no_data"}
+
     if len(daily) < 3:
-        if len(daily) == 0:
-            return {"predicted_orders": 0, "method": "no_data"}
-        return {"predicted_orders": int(daily['quantity'].iloc[-1]), "method": "last_value"}
+        # Not enough data → fallback to last known value
+        return {
+            "predicted_orders": int(daily["quantity"].iloc[-1]),
+            "method": "fallback_last_value"
+        }
 
     x = daily["date"].map(lambda d: d.toordinal()).values
     y = daily["quantity"].values
 
     slope, intercept = simple_linear_regression(x, y)
 
-    tomorrow_ord = (daily["date"].iloc[-1] + pd.Timedelta(days=1)).toordinal()
+    tomorrow_ord = (daily["date"].iloc[-1] + timedelta(days=1)).toordinal()
     prediction = slope * tomorrow_ord + intercept
 
-    return {"predicted_orders": max(0, int(prediction)), "method": "numpy_regression"}
+    return {
+        "predicted_orders": max(0, int(prediction)),
+        "method": "numpy_regression"
+    }
 
 
-# ------------ 2) Predict Item Demand ------------ #
+# ---------------- 2️⃣ Predict Demand for Each Item ---------------- #
 
 def predict_item_demand(df, n_days=7):
     df = ensure_timestamp(df)
+
+    if df.empty:
+        return {"results": []}
+
     df["date"] = df["timestamp"].dt.date
+    df["date"] = pd.to_datetime(df["date"])
 
     grouped = df.groupby(["item", "date"])["quantity"].sum().reset_index()
-    grouped["date"] = pd.to_datetime(grouped["date"])
-
     items = grouped["item"].unique()
+
     results = []
 
     for item in items:
@@ -79,7 +105,11 @@ def predict_item_demand(df, n_days=7):
 
         if len(dfi) < 3:
             avg = int(dfi["quantity"].mean()) if len(dfi) > 0 else 0
-            results.append({"item": item, "predictions": [avg]*n_days, "method": "average"})
+            results.append({
+                "item": item,
+                "predictions": [avg] * n_days,
+                "method": "fallback_average"
+            })
             continue
 
         x = dfi["date"].map(lambda d: d.toordinal()).values
@@ -89,40 +119,49 @@ def predict_item_demand(df, n_days=7):
 
         last_day = dfi["date"].max()
         preds = []
-        for i in range(1, n_days+1):
-            day_ord = (last_day + pd.Timedelta(days=i)).toordinal()
-            preds.append(max(0, int(slope * day_ord + intercept)))
 
-        results.append({"item": item, "predictions": preds, "method": "numpy_regression"})
+        for i in range(1, n_days + 1):
+            day_ord = (last_day + timedelta(days=i)).toordinal()
+            p = slope * day_ord + intercept
+            preds.append(max(0, int(p)))
+
+        results.append({
+            "item": item,
+            "predictions": preds,
+            "method": "numpy_regression"
+        })
 
     return {"results": results}
 
 
-# ------------ 3) Peak Hour ------------ #
+# ---------------- 3️⃣ Predict Peak Hour ---------------- #
 
 def predict_peak_hour(df):
     df = ensure_timestamp(df)
+
     if df.empty:
         return {"peak_hour": None, "estimate": 0}
 
     df["hour"] = df["timestamp"].dt.hour
-    hourly = df.groupby("hour")["quantity"].sum().reset_index()
-    hourly = hourly.sort_values("quantity", ascending=False)
 
-    top = hourly.iloc[0]
+    grouped = df.groupby("hour")["quantity"].sum().reset_index()
+    grouped = grouped.sort_values("quantity", ascending=False)
+
+    top = grouped.iloc[0]
+
     return {
         "peak_hour": int(top["hour"]),
         "estimate": int(top["quantity"]),
-        "method": "simple_grouping"
+        "method": "hourly_grouping"
     }
 
 
-# ------------ 4) Trend ------------ #
+# ---------------- 4️⃣ Sales Trend ---------------- #
 
 def sales_trend(df):
     daily = aggregate_daily(df)
 
-    if len(daily) < 3:
+    if daily.empty or len(daily) < 3:
         return {"trend": "not_enough_data", "slope": 0}
 
     x = daily["date"].map(lambda d: d.toordinal()).values
@@ -131,10 +170,10 @@ def sales_trend(df):
     slope, intercept = simple_linear_regression(x, y)
 
     if slope > 0:
-        trend = "increasing"
+        t = "increasing"
     elif slope < 0:
-        trend = "decreasing"
+        t = "decreasing"
     else:
-        trend = "stable"
+        t = "stable"
 
-    return {"trend": trend, "slope": float(slope)}
+    return {"trend": t, "slope": float(slope)}
