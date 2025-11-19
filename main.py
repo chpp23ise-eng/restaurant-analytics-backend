@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from routes.analytics_routes import router as analytics_router
 from routes.order_routes import router as order_router
+from routes.ml_routes import router as ml_router        # ⭐ ADD THIS LINE
 from config.config import MODE
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -24,10 +25,13 @@ app.add_middleware(
 def root():
     return {"message": "Restaurant Analytics API", "mode": MODE}
 
+# ---------- Include your routers ----------
 app.include_router(analytics_router, prefix="/analytics")
 app.include_router(order_router, prefix="/orders")
+app.include_router(ml_router, prefix="/ml")            # ⭐ ADD THIS LINE TOO
 
 
+# ---------- Download CSV ----------
 DATA_PATH = "data/orders.csv"
 
 @app.get("/download/orders")
